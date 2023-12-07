@@ -221,40 +221,44 @@ function ListMenuItem:update()
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
-        -- nb items on the right, directory name on the left
-        local wright = TextWidget:new{
-            text = self.mandatory or "",
-            face = Font:getFace("infont", _fontSize(14, 18)),
-        }
-        local pad_width = Screen:scaleBySize(10) -- on the left, in between, and on the right
-        local wleft_width = dimen.w - wright:getWidth() - 3*pad_width
-        local wleft = TextBoxWidget:new{
-            text = BD.directory(self.text),
-            face = Font:getFace("cfont", _fontSize(20, 24)),
-            width = wleft_width,
-            alignment = "left",
-            bold = true,
-            height = dimen.h,
-            height_adjust = true,
-            height_overflow_show_ellipsis = true,
-        }
-        widget = OverlapGroup:new{
-            dimen = dimen:copy(),
-            LeftContainer:new{
+        local file_mode = lfs.attributes(self.filepath, "mode")
+        if file_mode == "directory" or self.entry.is_virtual_dir then
+            self.is_directory = true
+            -- nb items on the right, directory name on the left
+            local wright = TextWidget:new{
+                text = self.mandatory or "",
+                face = Font:getFace("infont", _fontSize(14, 18)),
+            }
+            local pad_width = Screen:scaleBySize(10) -- on the left, in between, and on the right
+            local wleft_width = dimen.w - wright:getWidth() - 3*pad_width
+            local wleft = TextBoxWidget:new{
+                text = BD.directory(self.text),
+                face = Font:getFace("cfont", _fontSize(20, 24)),
+                width = wleft_width,
+                alignment = "left",
+                bold = true,
+                height = dimen.h,
+                height_adjust = true,
+                height_overflow_show_ellipsis = true,
+            }
+            widget = OverlapGroup:new{
                 dimen = dimen:copy(),
-                HorizontalGroup:new{
-                    HorizontalSpan:new{ width = pad_width },
-                    wleft,
-                }
-            },
-            RightContainer:new{
-                dimen = dimen:copy(),
-                HorizontalGroup:new{
-                    wright,
-                    HorizontalSpan:new{ width = pad_width },
+                LeftContainer:new{
+                    dimen = dimen:copy(),
+                    HorizontalGroup:new{
+                        HorizontalSpan:new{ width = pad_width },
+                        wleft,
+                    }
                 },
-            },
-        }
+                RightContainer:new{
+                    dimen = dimen:copy(),
+                    HorizontalGroup:new{
+                        wright,
+                        HorizontalSpan:new{ width = pad_width },
+                    },
+                },
+            }
+        end
     else -- file
         self.file_deleted = self.entry.dim -- entry with deleted file from History or selected file from FM
         local fgcolor = self.file_deleted and Blitbuffer.COLOR_DARK_GRAY or nil

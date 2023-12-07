@@ -463,6 +463,9 @@ function MosaicMenuItem:update()
 
     self.is_directory = not (self.entry.is_file or self.entry.file)
     if self.is_directory then
+    local file_mode = lfs.attributes(self.filepath, "mode")
+    if file_mode == "directory" or self.entry.is_virtual_dir then
+        self.is_directory = true
         -- Directory : rounded corners
         local margin = Screen:scaleBySize(5) -- make directories less wide
         local padding = Screen:scaleBySize(5)
@@ -526,6 +529,7 @@ function MosaicMenuItem:update()
                 BottomContainer:new{ dimen = dimen_in, nbitems},
             },
         }
+    end
     else -- file
         self.file_deleted = self.entry.dim -- entry with deleted file from History or selected file from FM
 
