@@ -11,6 +11,7 @@ local UIManager = require("ui/uimanager")
 local ffi = require("ffi")
 local ffiUtil = require("ffi/util")
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
 local sort = require("sort")
 local util = require("util")
 local _ = require("gettext")
@@ -437,9 +438,9 @@ local VIRTUAL_ITEMS = {
         -- symbol = "\u{f007}",
         -- symbol = "\u{e84e}",
     },
-    SERIE = {
-        browse_text = _("Browse by serie"),
-        filter_text = _("Filter by serie"),
+    SERIES = {
+        browse_text = _("Browse by series"),
+        filter_text = _("Filter by series"),
         db_column = "series",
         symbol = "\u{ecd7}",
         -- symbol = "\u{ec68}",
@@ -462,15 +463,29 @@ local VIRTUAL_ITEMS = {
         symbol = "\u{f412}",
         -- symbol = "\u{e8d5}",
     },
+    TAG = {
+        browse_text = _("Browse by tag"),
+        filter_text = _("Filter by tag"),
+        calibre_column = "tags",
+        symbol = "\u{f413}",
+    },
+    GENRE = {
+        browse_text = _("Browse by genre"),
+        filter_text = _("Filter by genre"),
+        calibre_column = "genre",
+        symbol = "\u{f414}",
+    },
     -- YEAR "\u{f073}", but not available in bookinfo or cre
 }
 
 local VIRTUAL_SUBITEMS_ORDERED = {
-    VIRTUAL_ITEMS.TITLE,
+    -- VIRTUAL_ITEMS.TITLE,
     VIRTUAL_ITEMS.AUTHOR,
-    VIRTUAL_ITEMS.SERIE,
-    VIRTUAL_ITEMS.LANGUAGE,
-    VIRTUAL_ITEMS.KEYWORD,
+    VIRTUAL_ITEMS.SERIES,
+    -- VIRTUAL_ITEMS.LANGUAGE,
+    -- VIRTUAL_ITEMS.KEYWORD,
+    VIRTUAL_ITEMS.TAG,
+    VIRTUAL_ITEMS.GENRE,
 }
 local VIRTUAL_ROOT_SYMBOL = VIRTUAL_ITEMS.ROOT.symbol
 local VIRTUAL_SYMBOLS = {}
@@ -519,7 +534,7 @@ function FileChooser:getVirtualList(path, collate)
             path = path:match("(.*)/.*")
         end
         for i, v in ipairs(VIRTUAL_SUBITEMS_ORDERED) do
-            item = true
+            local item
             if collate then -- when collate == nil count only to display in folder mandatory
                 local fake_attributes = {
                     mode = "directory",
@@ -537,9 +552,9 @@ function FileChooser:getVirtualList(path, collate)
         return dirs, files
     end
     -- We have arguments
-    local meta_name
-    local filters = {}
-    local filters_seen = {}
+    local metadata
+    local filters = {db = {}, calibre = {}}
+    local filters_seen = {db = {}, calibre = {}}
     local cur_value
     while #fragments > 0 do
         local fragment = table.remove(fragments)
@@ -547,16 +562,27 @@ function FileChooser:getVirtualList(path, collate)
         if meta then
             if meta == VIRTUAL_ITEMS.ROOT or meta == VIRTUAL_ITEMS.TITLE then
                 do end -- do nothing
-            else
-                local db_meta_name = meta.db_column
+            elseif meta.calibre_column then
+                local calibre_name = meta.calibre_column
                 if cur_value ~= nil then
-                    table.insert(filters, {db_meta_name, cur_value})
-                    if not filters_seen[db_meta_name] then
-                        filters_seen[db_meta_name] = {}
+                    table.insert(filters.calibre, {calibre_name, cur_value})
+                    if not filters_seen.calibre[calibre_name] then
+                        filters_seen.calibre[calibre_name] = {}
                     end
-                    filters_seen[db_meta_name][cur_value] = true
+                    filters_seen.calibre[calibre_name][cur_value] = true
                 else
-                    meta_name = db_meta_name
+                    metadata = { type = "calibre", name = calibre_name }
+                end
+            else
+                local column_name = meta.db_column
+                if cur_value ~= nil then
+                    table.insert(filters.db, {column_name, cur_value})
+                    if not filters_seen.db[column_name] then
+                        filters_seen.db[column_name] = {}
+                    end
+                    filters_seen.db[column_name][cur_value] = true
+                else
+                    metadata = { type = "db", name = column_name }
                 end
             end
         else
@@ -566,14 +592,16 @@ function FileChooser:getVirtualList(path, collate)
             end
         end
     end
-    if meta_name == "title" then
-        meta_name = nil
+    if metadata ~= nil and metadata.name == "title" then
+        metadata = nil
     end
-    if meta_name then
-        local matching_values = self.filemanager.coverbrowser:getMatchingMetadataValues(base_dir, meta_name, filters)
+    if metadata ~= nil then
+        local matching_values = self.filemanager.coverbrowser:getMatchingMetadataValues(base_dir, metadata, filters)
         for i, v in ipairs(matching_values) do
             -- Ignore those already present in the current filters
-            if not filters_seen[meta_name] or not filters_seen[meta_name][v[1]] then
+            local not_db_seen = not filters_seen.db[metadata.name] or not filters_seen.db[metadata.name][v[1]]
+            local not_calibre_seen = not filters_seen.calibre[metadata.name] or not filters_seen.calibre[metadata.name][v[1]]
+            if not_db_seen or not_calibre_seen then
                 local fake_attributes = {
                     mode = "directory",
                     modification = 0,
@@ -649,13 +677,16 @@ function FileChooser:genItemTable(dirs, files, path)
     -- Plugins may not yet be loaded, so we can't use self.filemanager.coverbrowser to check if CoverBrowser will be available
     local coverbrowser_available = not G_reader_settings:readSetting("plugins_disabled") or not G_reader_settings:readSetting("plugins_disabled")["coverbrowser"]
     if self.filemanager and coverbrowser_available and path and (virtual_path_type == nil or virtual_path_type == VIRTUAL_PATH_TYPE_MATCHING_FILES) then
-        table.insert(item_table, 1, {
-            --text = "\u{EA30} browse by metadata \u{EA30} \u{E7F5} \u{E7FC} \u{e8d5} \u{eec3} \u{e93a} \u{e92f} \u{e9c4} \u{ed49} \u{ea27} \u{edf8} \u{ebfa} \u{ebf8} \u{ebfc} \u{ec66} \u{ec68} \u{ec6d} \u{ec9e}",
-            text = VIRTUAL_ROOT_SYMBOL .. " " .. (virtual_path_type and VIRTUAL_ITEMS.ROOT.filter_text or VIRTUAL_ITEMS.ROOT.browse_text),
-            path = path.."/"..VIRTUAL_ROOT_SYMBOL,
-            is_virtual_dir = true,
-            is_virtual_root_dir = true,
-        })
+        -- Nested filtering doesn't currently work
+        if virtual_path_type == nil then
+            table.insert(item_table, 1, {
+                --text = "\u{EA30} browse by metadata \u{EA30} \u{E7F5} \u{E7FC} \u{e8d5} \u{eec3} \u{e93a} \u{e92f} \u{e9c4} \u{ed49} \u{ea27} \u{edf8} \u{ebfa} \u{ebf8} \u{ebfc} \u{ec66} \u{ec68} \u{ec6d} \u{ec9e}",
+                text = VIRTUAL_ROOT_SYMBOL .. " " .. (virtual_path_type and VIRTUAL_ITEMS.ROOT.filter_text or VIRTUAL_ITEMS.ROOT.browse_text),
+                path = path.."/"..VIRTUAL_ROOT_SYMBOL,
+                is_virtual_dir = true,
+                is_virtual_root_dir = true,
+            })
+        end
     end
 
     if path then -- file browser or PathChooser

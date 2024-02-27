@@ -6,6 +6,7 @@ local DocumentRegistry = require("document/documentregistry")
 local FFIUtil = require("ffi/util")
 local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
 local InfoMessage = require("ui/widget/infomessage")
+local PluginLoader = require("pluginloader")
 local RenderImage = require("ui/renderimage")
 local SQ3 = require("lua-ljsqlite3/init")
 local UIManager = require("ui/uimanager")
@@ -1011,14 +1012,69 @@ function BookInfoManager.isCachedCoverInvalid(bookinfo, cover_specs)
     end
 end
 
-function BookInfoManager:getMatchingMetadataValues(base_dir, meta_name, filters)
+function BookInfoManager:getMatchingMetadataValues(base_dir, meta, filters)
+    local results = {}
+
+    local calibre = nil
+    local db = nil
+    if meta.type == "calibre" then
+        calibre = BookInfoManager:getMatchingMetadataValuesCalibre(base_dir, meta.name, filters.calibre)
+    elseif meta.type == "db" then
+        db = BookInfoManager:getMatchingMetadataValuesSql(base_dir, meta.name, filters.db)
+    end
+
+    if calibre ~= nil then
+        for _, v in ipairs(calibre) do
+            if db ~= nil then
+                for _, vv in ipairs(db) do
+                    if v[0] == vv[0] then
+                        table.insert(results, v)
+                    end
+                end
+            else
+                table.insert(results, v)
+            end
+        end
+    elseif db ~= nil then
+        return db
+    end
+
+    return results
+end
+
+function BookInfoManager:getMatchingMetadataValuesCalibre(base_dir, meta_name, filters)
+    local calibre = PluginLoader:getPluginInstance("calibre")
+    local metadata = calibre.getMetadata();
+
+    local values = {}
+    for _, v in ipairs(metadata) do
+        local col = v[meta_name]
+        if col ~= nil then
+            if type(col) == "table" then
+                for _, v in ipairs(col) do
+                    values[v] = (values[v] or 0) + 1
+                end
+            elseif type(col) == "string" then
+                values[col] = (values[col] or 0) + 1
+            end
+        end
+    end
+
+    local values_arr = {}
+    for k, v in pairs(values) do
+        table.insert(values_arr, {k, v})
+    end
+
+    return values_arr
+end
+
+function BookInfoManager:getMatchingMetadataValuesSql(base_dir, meta_name, filters)
     local vars = {}
     local sql = T("select %1, count(1) from bookinfo where directory glob ?", meta_name)
         -- GLOB is case sensitive, unlike LIKE. Also, LIKE is case insentive only
         -- with ASCII chars, and not Unicode ones, so it's a bit useless.
     table.insert(vars, base_dir..'*')
     for _, filter in ipairs(filters) do
-        local name, value = filter[1], filter[2]
         local name, value = filter[1], filter[2]
         if value == false then
             sql = T("%1 and %2 is NULL", sql, name)
@@ -1072,6 +1128,76 @@ function BookInfoManager:getMatchingMetadataValues(base_dir, meta_name, filters)
 end
 
 function BookInfoManager:getMatchingFiles(base_dir, filters)
+    local results = {}
+
+    local calibre
+    local db
+
+    if #filters.calibre > 0 then
+        calibre = BookInfoManager:getMatchingFilesCalibre(base_dir, filters.calibre)
+    end
+
+    if #filters.db > 0 then
+        db = BookInfoManager:getMatchingFilesSql(base_dir, filters.db)
+    end
+
+    if calibre ~= nil then
+        for _, v in ipairs(calibre) do
+            if db ~= nil then
+                for _, vv in ipairs(db) do
+                    if v == vv then
+                        table.insert(results, v)
+                    end
+                end
+            else
+                table.insert(results, v)
+            end
+        end
+    elseif db ~= nil then
+        return db
+    end
+
+    return results
+end
+
+function BookInfoManager:getMatchingFilesCalibre(base_dir, filters)
+    local calibre = PluginLoader:getPluginInstance("calibre")
+    local metadata = calibre.getMetadata();
+
+    local results = {}
+
+    for _, filter in ipairs(filters) do
+        local name, value = filter[1], filter[2]
+        for _, entry in pairs(metadata) do
+            local _, filename = util.splitFilePathName(entry.lpath)
+            local res = {
+                entry.rootpath.."/"..entry.lpath,
+                filename
+            }
+
+            if type(entry[name]) == "string" then
+                if entry[name] == value then
+                    table.insert(results, res)
+                end
+            elseif type(entry[name]) == "table" then
+                for _, v in ipairs(entry[name]) do
+                    if v == value then
+                        table.insert(results, res)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    return results
+end
+
+function BookInfoManager:getMatchingFilesSql(base_dir, filters)
+    if #filters == 0 then
+        return {}
+    end
+
     local vars = {}
     local sql = "select directory||filename, filename from bookinfo where directory glob ?"
     table.insert(vars, base_dir..'*')

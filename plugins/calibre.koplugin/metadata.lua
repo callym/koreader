@@ -38,6 +38,10 @@ local search_used_metadata = {
     "series_index"
 }
 
+local used_custom_metadata = {
+    "genre"
+}
+
 local function slim(book, is_search)
     local slim_book = rapidjson.object({})
     for _, k in ipairs(is_search and search_used_metadata or used_metadata) do
@@ -47,6 +51,19 @@ local function slim(book, is_search)
             slim_book[k] = book[k] or rapidjson.array({})
         else
             slim_book[k] = book[k]
+        end
+    end
+    for _, k in ipairs(used_custom_metadata) do
+        local user_metadata = book.user_metadata
+        if user_metadata ~= nil then
+            local key = string.format("#%s", k)
+            local data = user_metadata[key]
+            if data ~= nil then
+                local value = data["#value#"]
+                if value ~= nil then
+                    slim_book[k] = value
+                end
+            end
         end
     end
     return slim_book

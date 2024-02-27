@@ -25,6 +25,10 @@ local Calibre = WidgetContainer:extend{
     is_doc_only = false,
 }
 
+function Calibre:getMetadata(name)
+    return CalibreSearch:getMetadata()
+end
+
 function Calibre:onCalibreSearch()
     CalibreSearch:ShowSearch()
     return true

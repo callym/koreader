@@ -602,6 +602,17 @@ end
 
 -- get metadata from cache or calibre files
 function CalibreSearch:getMetadata()
+    if #self.libraries == 0 then
+        local libs, err = self.cache_libs:load()
+        if not libs then
+            logger.warn("no calibre libraries", err)
+            self:prompt(_("No calibre libraries"))
+            return
+        else
+            self.libraries = libs
+        end
+    end
+
     local start_time = time.now()
     local template = "metadata: %d books imported from %s in %.3f milliseconds"
 
@@ -639,7 +650,7 @@ function CalibreSearch:getMetadata()
             local is_newer = true
             for path, enabled in pairs(self.libraries) do
                 if enabled and not cacheIsNewer(CalibreMetadata:getDeviceInfo(path, "date_last_connected")) then
-                    is_newer = false
+                    -- is_newer = false
                     break
                 end
             end
