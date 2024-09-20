@@ -1134,7 +1134,7 @@ function BookInfoManager:getMatchingFiles(base_dir, filters)
     local db
 
     if #filters.calibre > 0 then
-        calibre = BookInfoManager:getMatchingFilesCalibre(base_dir, filters.calibre)
+        calibre = BookInfoManager:getMatchingFilesCalibre(base_dir, filters.calibre, filters.calibre_sort)
     end
 
     if #filters.db > 0 then
@@ -1157,10 +1157,16 @@ function BookInfoManager:getMatchingFiles(base_dir, filters)
         return db
     end
 
+    if filters.calibre_sort ~= nil then
+        logger.err(results)
+        table.sort(results, function(a,b) return a[3] < b[3] end)
+        logger.err(results)
+    end
+
     return results
 end
 
-function BookInfoManager:getMatchingFilesCalibre(base_dir, filters)
+function BookInfoManager:getMatchingFilesCalibre(base_dir, filters, sort)
     local calibre = PluginLoader:getPluginInstance("calibre")
     local metadata = calibre.getMetadata();
 
@@ -1174,6 +1180,10 @@ function BookInfoManager:getMatchingFilesCalibre(base_dir, filters)
                 entry.rootpath.."/"..entry.lpath,
                 filename
             }
+
+            if type(entry[sort]) == "number" then
+                table.insert(res, entry[sort])
+            end
 
             if type(entry[name]) == "string" then
                 if entry[name] == value then

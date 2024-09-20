@@ -441,7 +441,8 @@ local VIRTUAL_ITEMS = {
     SERIES = {
         browse_text = _("Browse by series"),
         filter_text = _("Filter by series"),
-        db_column = "series",
+        calibre_column = "series",
+        calibre_sort_column = "series_index",
         symbol = "\u{ecd7}",
         -- symbol = "\u{ec68}",
         -- symbol = "\u{ec75}",
@@ -520,7 +521,7 @@ function FileChooser:getVirtualList(path, collate)
     local dirs, files = {}, {}
     local base_dir, virtual_root, virtual_path = path:match("(.-)/("..VIRTUAL_ROOT_SYMBOL..")(.*)")
     if not virtual_root then
-        return dirs, files
+        return dirs, files, true
     end
     local fragments = {}
     for fragment in util.gsplit(virtual_path, "/") do
@@ -549,7 +550,7 @@ function FileChooser:getVirtualList(path, collate)
             end
             table.insert(dirs, item)
         end
-        return dirs, files
+        return dirs, files, true
     end
     -- We have arguments
     local metadata
@@ -564,14 +565,19 @@ function FileChooser:getVirtualList(path, collate)
                 do end -- do nothing
             elseif meta.calibre_column then
                 local calibre_name = meta.calibre_column
+                local calibre_sort_column = meta.calibre_sort_column
                 if cur_value ~= nil then
                     table.insert(filters.calibre, {calibre_name, cur_value})
                     if not filters_seen.calibre[calibre_name] then
                         filters_seen.calibre[calibre_name] = {}
                     end
                     filters_seen.calibre[calibre_name][cur_value] = true
+                    if calibre_sort_column ~= nil then
+                        filters.calibre_sort = calibre_sort_column
+                    end
                 else
-                    metadata = { type = "calibre", name = calibre_name }
+                    metadata = { type = "calibre", name = calibre_name, sort = calibre_sort_column }
+                    logger.err("callym: metadata = ", metadata)
                 end
             else
                 local column_name = meta.db_column
@@ -625,11 +631,11 @@ function FileChooser:getVirtualList(path, collate)
             local attributes = lfs.attributes(filepath)
             if attributes and attributes.mode == "file" then
                 local item = self:getListItem(path, v[2], filepath, attributes, collate)
-                table.insert(files, item)
+                table.insert(files, i, item)
             end
         end
     end
-    return dirs, files
+    return dirs, files, filters.calibre_sort == nil
 end
 
 function FileChooser:clearSortingCache()
@@ -639,14 +645,15 @@ end
 function FileChooser:genItemTableFromPath(path)
     local collate = self:getCollate()
     if self:getVirtualPathTypePath(path) then
-        local dirs, files = self:getVirtualList(path, collate)
-        return self:genItemTable(dirs, files, path)
+        local dirs, files, should_sort = self:getVirtualList(path, collate)
+        return self:genItemTable(dirs, files, path, should_sort)
     end
     local dirs, files = self:getList(path, collate)
     return self:genItemTable(dirs, files, path)
 end
 
-function FileChooser:genItemTable(dirs, files, path)
+function FileChooser:genItemTable(dirs, files, path, should_sort)
+    logger.err("should_sort = ", should_sort)
     local collate = self:getCollate()
     local collate_mixed = G_reader_settings:isTrue("collate_mixed")
     local reverse_collate = G_reader_settings:isTrue("reverse_collate")
@@ -663,13 +670,19 @@ function FileChooser:genItemTable(dirs, files, path)
     if collate.can_collate_mixed and collate_mixed then
         table.move(dirs, 1, #dirs, 1, item_table)
         table.move(files, 1, #files, #item_table + 1, item_table)
-        table.sort(item_table, sorting)
+        if should_sort == true then
+            table.sort(item_table, sorting)
+        end
     else
-        table.sort(files, sorting)
+        if should_sort == true then
+            table.sort(files, sorting)
+        end
         if not collate.can_collate_mixed then -- keep folders sorted by name not reversed
             sorting = self:getSortingFunction(self.collates.strcoll)
         end
-        table.sort(dirs, sorting)
+        if should_sort == true then
+            table.sort(dirs, sorting)
+        end
         table.move(dirs, 1, #dirs, 1, item_table)
         table.move(files, 1, #files, #item_table + 1, item_table)
     end
